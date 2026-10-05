@@ -192,10 +192,16 @@
             .ctrl-group { gap: 5px; }
         }
         body.touch #touchTools { display: flex; }
-        @media (max-width: 900px), (pointer: coarse) {
-            #mobileControls { display: flex; }
-            #touchTools { display: flex; }
+        @media (pointer: coarse) {
+            body:not(.kbd) #mobileControls { display: flex; }
+            body:not(.kbd) #touchTools { display: flex; }
         }
+        /* وضع الكمبيوتر يُخفي كل أزرار اللمس حتى على شاشات لمسية */
+        body.kbd #mobileControls, body.kbd #touchTools { display: none !important; }
+        body.kbd #rotateHint { display: none !important; }
+        body.touch #kbInfo { display: none; }
+        #touchInfo { display: none; }
+        body.touch #touchInfo { display: block; }
 
         .star { position: absolute; background: #fff; border-radius: 50%; animation: twinkle 2s ease-in-out infinite; }
         @keyframes twinkle { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
@@ -243,10 +249,15 @@
 
                 <div class="levels" id="levelSelect"></div>
 
-                <div class="controls-info">
+                <div class="controls-info" id="kbInfo">
                     <kbd>←</kbd> <kbd>→</kbd> حركة &nbsp;|&nbsp; <kbd>Shift</kbd> جري &nbsp;|&nbsp;
                     <kbd>Space</kbd> قفز &nbsp;|&nbsp; <kbd>X</kbd> كرة نار &nbsp;|&nbsp; <kbd>↓</kbd> انحناء<br>
                     <kbd>P</kbd> إيقاف مؤقت &nbsp;|&nbsp; <kbd>M</kbd> الصوت &nbsp;|&nbsp; <kbd>F</kbd> ملء الشاشة &nbsp;|&nbsp; <kbd>R</kbd> إعادة
+                </div>
+
+                <div class="controls-info" id="touchInfo">
+                    <b style="color:#fbd000">👆 أزرار اللمس</b> — <b>◀ ▶</b> حركة &nbsp;|&nbsp; <b>🏃</b> جري &nbsp;|&nbsp; <b>▲</b> قفز &nbsp;|&nbsp; <b>🔥</b> نار<br>
+                    <b>⏸</b> إيقاف مؤقت &nbsp;|&nbsp; <b>🔊</b> الصوت &nbsp;|&nbsp; زر <b>🔄 من جديد</b> لإعادة المرحلة
                 </div>
 
                 <button class="play-btn" onclick="startGame()">🎮 ابدأ اللعب! 🎮</button>
@@ -254,6 +265,7 @@
                 <div class="opt-row">
                     <button class="opt-btn" id="soundBtn" onclick="toggleMute()">🔊 الصوت: يعمل</button>
                     <button class="opt-btn" onclick="toggleFullscreen()">🖥️ ملء الشاشة</button>
+                    <button class="opt-btn" id="ctrlToggle" type="button" onclick="toggleCtrlMode()">🎮 التحكم: تلقائي</button>
                 </div>
 
                 <div class="best" id="bestLine">🏆 أفضل نتيجة: 0</div>
@@ -377,9 +389,34 @@
         }
     }
 
-    /* ---------- أزرار اللمس ---------- */
-    const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-    if (isTouch) document.body.classList.add('touch');
+    /* ---------- كشف وضع التحكم: كمبيوتر أم جوال ---------- */
+    const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 ||
+        (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+    const savedCtrl = load('mario_ctrl_v1', null);          // null = تلقائي
+    let touchMode = savedCtrl === null ? !!hasTouch : savedCtrl === 1;
+
+    function applyCtrlMode() {
+        document.body.classList.toggle('touch', touchMode);
+        document.body.classList.toggle('kbd', !touchMode);
+        const t = document.getElementById('ctrlToggle');
+        if (t) t.textContent = touchMode ? '👆 التحكم: اللمس (اضغط للتبديل)' : '⌨️ التحكم: الكمبيوتر (اضغط للتبديل)';
+        if (typeof fitCanvas === 'function') fitCanvas();
+    }
+    function setCtrlMode(on, persist) {
+        touchMode = !!on;
+        if (persist) save('mario_ctrl_v1', touchMode ? 1 : 0);
+        applyCtrlMode();
+    }
+    function toggleCtrlMode() { setCtrlMode(!touchMode, true); Sound.play('move'); }
+
+    // أول لمسة على الشاشة ⇦ وضع الجوال، وأول ضغطة ماوس أو مفتاح ⇦ وضع الكمبيوتر
+    window.addEventListener('pointerdown', e => {
+        if (e && e.target && e.target.closest && e.target.closest('#ctrlToggle')) return;
+        if (e.pointerType === 'touch') { if (!touchMode) setCtrlMode(true, true); }
+        else if (e.pointerType === 'mouse' && touchMode) { setCtrlMode(false, true); }
+    });
+    window.addEventListener('keydown', () => { if (touchMode) setCtrlMode(false, true); });
+    applyCtrlMode();
 
     function grab(el, e) {
         // يمنع «تجمّد» الزر إذا خرج الإصبع خارجه قبل رفعه (مشكلة شائعة على الموبايل)
@@ -557,8 +594,8 @@
     }
     function fitCanvas() {
         const pad = 12;
-        const topPad = isTouch ? 46 : 8;
-        const botPad = isTouch ? 96 : 8;
+        const topPad = touchMode ? 46 : 8;
+        const botPad = touchMode ? 96 : 8;
         document.body.style.paddingTop = topPad + 'px';
         document.body.style.paddingBottom = botPad + 'px';
         const availW = window.innerWidth - pad * 2;
@@ -2652,8 +2689,13 @@
         ctx.font = '17px Cairo, Arial'; ctx.fillStyle = '#FFF';
         ctx.fillText('اضغط P للمتابعة', VIEW_W / 2, VIEW_H / 2 - 6);
         ctx.fillStyle = '#CCC'; ctx.font = '15px Cairo, Arial';
-        ctx.fillText('R = إعادة اللعبة من البداية', VIEW_W / 2, VIEW_H / 2 + 26);
-        ctx.fillText('M = كتم الصوت  |  F = ملء الشاشة', VIEW_W / 2, VIEW_H / 2 + 52);
+        if (touchMode) {
+            ctx.fillText('اضغط ⏸ أعلى الشاشة للعودة', VIEW_W / 2, VIEW_H / 2 + 26);
+            ctx.fillText('🔊 كتم الصوت  |  🔄 من جديد = إعادة المرحلة', VIEW_W / 2, VIEW_H / 2 + 52);
+        } else {
+            ctx.fillText('R = إعادة اللعبة من البداية', VIEW_W / 2, VIEW_H / 2 + 26);
+            ctx.fillText('M = كتم الصوت  |  F = ملء الشاشة', VIEW_W / 2, VIEW_H / 2 + 52);
+        }
         ctx.fillStyle = '#8AE'; ctx.fillText(curSpec.title + ' — ' + curSpec.name, VIEW_W / 2, VIEW_H / 2 + 80);
     }
     function drawGameOver() {
